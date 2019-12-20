@@ -34,6 +34,47 @@ namespace Microsoft.Build.Unity.ProjectGeneration
     public class PluginAssemblyInfo : ReferenceItemInfo
     {
         /// <summary>
+        /// Types of CPUs that a plugin may support
+        /// </summary>
+        public enum CPUType
+        {
+            /// <summary>
+            /// x86 CPUs
+            /// </summary>
+            X86,
+
+            /// <summary>
+            /// x64 CPUs
+            /// </summary>
+            X64,
+
+            /// <summary>
+            /// ARM CPUs
+            /// </summary>
+            ARM,
+
+            /// <summary>
+            /// ARM64 CPUs
+            /// </summary>
+            ARM64,
+
+            /// <summary>
+            /// Any CPU
+            /// </summary>
+            AnyCPU,
+
+            /// <summary>
+            /// x86 and x64 CPUs
+            /// </summary>
+            X86_64,
+
+            /// <summary>
+            /// Default CPU type
+            /// </summary>
+            None
+        }
+
+        /// <summary>
         /// Gets the type of Plugin
         /// </summary>
         public PluginType Type { get; }
@@ -47,6 +88,11 @@ namespace Microsoft.Build.Unity.ProjectGeneration
         /// Gets the output path to the reference.
         /// </summary>
         public Uri ReferencePath { get; }
+
+        /// <summary>
+        /// A dictionary of what CPUType this plugin is compiled for given the platform.
+        /// </summary>
+        public Dictionary<string, CPUType> SupportedCPUs;
 
         /// <summary>
         /// If the plugin has define constraints, then it will only be referenced if the platform/project defines at least one of these constraints.
@@ -63,17 +109,12 @@ namespace Microsoft.Build.Unity.ProjectGeneration
         {
             Type = type;
             ReferencePath = new Uri(fullPath);
-
-            if (Type == PluginType.Managed)
-            {
-                ParseYAMLFile();
-            }
+            SupportedCPUs = new Dictionary<string, CPUType>();
+            ParseYAMLFile();
         }
 
         private void ParseYAMLFile()
         {
-            // This approach doesn't work for native YAML parsing
-
             Dictionary<string, bool> enabledPlatforms = new Dictionary<string, bool>();
             using (StreamReader reader = new StreamReader(ReferencePath.AbsolutePath + ".meta"))
             {
@@ -131,7 +172,7 @@ namespace Microsoft.Build.Unity.ProjectGeneration
                     reader.ReadUntil("platformData:");
                 }
 
-                ParsePlatformData(reader, enabledPlatforms);
+                ParsePlatformData(reader, enabledPlatforms, SupportedCPUs);
             }
 
             Dictionary<BuildTarget, CompilationPlatformInfo> inEditorPlatforms = new Dictionary<BuildTarget, CompilationPlatformInfo>();
@@ -158,7 +199,7 @@ namespace Microsoft.Build.Unity.ProjectGeneration
             PlayerPlatforms = new ReadOnlyDictionary<BuildTarget, CompilationPlatformInfo>(playerPlatforms);
         }
 
-        private void ParsePlatformData(StreamReader reader, Dictionary<string, bool> enabledPlatforms)
+        private void ParsePlatformData(StreamReader reader, Dictionary<string, bool> enabledPlatforms, Dictionary<string, CPUType> platformSupportedCPUs)
         {
             if (reader.ReadUntil("first:", "userData:").Contains("userData:") || reader.EndOfStream)
             {
@@ -188,6 +229,34 @@ namespace Microsoft.Build.Unity.ProjectGeneration
 
                         return false;
                     });
+
+                    if (Type == PluginType.Native)
+                    {
+                        List<string> platforms = new List<string>();
+                        foreach (var pair in enabledPlatforms)
+                        {
+                            if (pair.Value)
+                            {
+                                platforms.Add(pair.Key);
+                            }
+                        }
+
+                        long startingPosition = reader.BaseStream.Position;
+                        foreach (string platform in platforms)
+                        {
+                            string titleLine = reader.ReadUntil(platform, "userData:");
+                            if (!titleLine.Contains("userData:"))
+                            {
+                                string cpuLine = reader.ReadUntil("CPU:", "userData:");
+                                if (!cpuLine.Contains("userData:"))
+                                {
+                                    string cpu = cpuLine.Trim().Replace("CPU: ", string.Empty);
+                                    platformSupportedCPUs[platform] = ParseCPUType(cpu);
+                                }
+                            }
+                            reader.BaseStream.Position = startingPosition;
+                        }
+                    }
 
                     return;
                 }
@@ -273,6 +342,72 @@ namespace Microsoft.Build.Unity.ProjectGeneration
                 {
                     Debug.LogError($"Platform '{platformName}' was specified as enabled by '{ReferencePath.AbsolutePath}' plugin, but not available in processed compilation settings.");
                 }
+            }
+        }
+
+        internal static CPUType ParseCPUType(string cpu)
+        {
+            if (string.IsNullOrEmpty(cpu))
+            {
+                return CPUType.None;
+            }
+
+            string lowerCPU = cpu.ToLower();
+            if ("x86".Equals(lowerCPU))
+            {
+                return CPUType.X86;
+            }
+            else if ("x64".Equals(lowerCPU))
+            {
+                return CPUType.X64;
+            }
+            else if ("arm".Equals(lowerCPU))
+            {
+                return CPUType.ARM;
+            }
+            else if ("arm64".Equals(lowerCPU))
+            {
+                return CPUType.ARM64;
+            }
+            else if ("x86_64".Equals(lowerCPU))
+            {
+                return CPUType.X86_64;
+            }
+            else if ("anycpu".Equals(lowerCPU))
+            {
+                return CPUType.AnyCPU;
+            }
+            else if ("none".Equals(lowerCPU))
+            {
+                return CPUType.None;
+            }
+
+            Debug.LogWarning($"Attempted to parse unknown CPU Type: {cpu}");
+            return CPUType.None;
+        }
+
+        public static bool CPUHasCompilationFlag(CPUType cpuType)
+        {
+            switch (cpuType)
+            {
+                case CPUType.AnyCPU:
+                case CPUType.ARM:
+                case CPUType.ARM64:
+                case CPUType.X64:
+                case CPUType.X86:
+                case CPUType.X86_64:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        public static string GetCPUCompilationFlag(CPUType cpuType)
+        {
+            switch (cpuType)
+            {
+                default:
+                    return "True";
             }
         }
     }

@@ -427,15 +427,26 @@ namespace Microsoft.Build.Unity.ProjectGeneration.Exporters
                 if (dependency.Dependency.Type == PluginType.Native)
                 {
                     continue;
+                    //List<string> platformConditions = GetNativeConditions(inEditor ? projectInfo.InEditorPlatforms : projectInfo.PlayerPlatforms, inEditor ? dependency.InEditorSupportedPlatforms : dependency.PlayerSupportedPlatforms, dependency.Dependency.SupportedCPUs);
+
+                    //TemplateReplacementSet replacementSet = pluginReferenceTemplatePart.CreateReplacementSet(templateReplacementSet);
+                    //pluginReferenceTemplatePart.Tokens["REFERENCE"].AssignValue(replacementSet, dependency.Dependency.Name);
+                    //pluginReferenceTemplatePart.Tokens["HINT_PATH"].AssignValue(replacementSet, dependency.Dependency.ReferencePath.AbsolutePath);
+                    //pluginReferenceTemplatePart.Tokens["CONDITION"].AssignValue(replacementSet, platformConditions.Count == 0 ? "false" : string.Join(" OR ", platformConditions));
+
+                    //additionalSearchPaths.Add(Path.GetDirectoryName(dependency.Dependency.ReferencePath.AbsolutePath));
                 }
-                List<string> platformConditions = GetPlatformConditions(inEditor ? projectInfo.InEditorPlatforms : projectInfo.PlayerPlatforms, inEditor ? dependency.InEditorSupportedPlatforms : dependency.PlayerSupportedPlatforms);
+                else
+                {
+                    List<string> platformConditions = GetPlatformConditions(inEditor ? projectInfo.InEditorPlatforms : projectInfo.PlayerPlatforms, inEditor ? dependency.InEditorSupportedPlatforms : dependency.PlayerSupportedPlatforms);
 
-                TemplateReplacementSet replacementSet = pluginReferenceTemplatePart.CreateReplacementSet(templateReplacementSet);
-                pluginReferenceTemplatePart.Tokens["REFERENCE"].AssignValue(replacementSet, dependency.Dependency.Name);
-                pluginReferenceTemplatePart.Tokens["HINT_PATH"].AssignValue(replacementSet, dependency.Dependency.ReferencePath.AbsolutePath);
-                pluginReferenceTemplatePart.Tokens["CONDITION"].AssignValue(replacementSet, platformConditions.Count == 0 ? "false" : string.Join(" OR ", platformConditions));
+                    TemplateReplacementSet replacementSet = pluginReferenceTemplatePart.CreateReplacementSet(templateReplacementSet);
+                    pluginReferenceTemplatePart.Tokens["REFERENCE"].AssignValue(replacementSet, dependency.Dependency.Name);
+                    pluginReferenceTemplatePart.Tokens["HINT_PATH"].AssignValue(replacementSet, dependency.Dependency.ReferencePath.AbsolutePath);
+                    pluginReferenceTemplatePart.Tokens["CONDITION"].AssignValue(replacementSet, platformConditions.Count == 0 ? "false" : string.Join(" OR ", platformConditions));
 
-                additionalSearchPaths.Add(Path.GetDirectoryName(dependency.Dependency.ReferencePath.AbsolutePath));
+                    additionalSearchPaths.Add(Path.GetDirectoryName(dependency.Dependency.ReferencePath.AbsolutePath));
+                }
             }
 
             templatePart.Tokens["REFERENCE_CONFIGURATION"].AssignValue(templateReplacementSet, inEditor ? "InEditor" : "Player");
@@ -459,6 +470,30 @@ namespace Microsoft.Build.Unity.ProjectGeneration.Exporters
                 {
                     string platformName = platformInfo.Name;
                     toReturn.Add($"'$(UnityPlatform)' == '{platformName}'");
+                }
+            }
+
+            return toReturn;
+        }
+
+        private List<string> GetNativeConditions(IReadOnlyDictionary<BuildTarget, CompilationPlatformInfo> platforms, IEnumerable<BuildTarget> dependencyPlatforms, Dictionary<string, PluginAssemblyInfo.CPUType> platformSupportedCPUs)
+        {
+            List<string> toReturn = new List<string>();
+
+            foreach (BuildTarget platform in dependencyPlatforms)
+            {
+                if (platforms.TryGetValue(platform, out CompilationPlatformInfo platformInfo))
+                {
+                    string platformName = platformInfo.Name;
+                    if (platformSupportedCPUs.TryGetValue(platformName, out PluginAssemblyInfo.CPUType cpuType) &&
+                        PluginAssemblyInfo.CPUHasCompilationFlag(cpuType))
+                    {
+                        toReturn.Add($"'$(UnityPlatform)' == '{platformName}' And {PluginAssemblyInfo.GetCPUCompilationFlag(cpuType)}");
+                    }
+                    else
+                    {
+                        toReturn.Add($"'$(UnityPlatform)' == '{platformName}'");
+                    }
                 }
             }
 

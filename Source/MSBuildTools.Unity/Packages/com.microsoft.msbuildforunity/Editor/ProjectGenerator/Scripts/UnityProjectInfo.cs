@@ -261,9 +261,16 @@ namespace Microsoft.Build.Unity.ProjectGeneration
             if (!assemblyDefinitionInfo.BuiltInPackage)
             {
                 Uri dependencies = new Uri(Path.Combine(Utilities.AssetPath, "Dependencies"));
-                foreach (PluginAssemblyInfo plugin in Plugins.Where(t => t.Type != PluginType.Native))
+                string currentDirectory = $"{new Uri(toReturn.AssemblyDefinitionInfo.Directory.FullName).AbsolutePath}/";
+                foreach (PluginAssemblyInfo plugin in Plugins)
                 {
-                    if (!dependencies.IsBaseOf(plugin.ReferencePath) && (plugin.AutoReferenced || assemblyDefinitionInfo.PrecompiledAssemblyReferences.Contains(plugin.Name)))
+                    if (plugin.Type != PluginType.Native &&
+                        !dependencies.IsBaseOf(plugin.ReferencePath) &&
+                        (plugin.AutoReferenced || assemblyDefinitionInfo.PrecompiledAssemblyReferences.Contains(plugin.Name)))
+                    {
+                        toReturn.AddDependency(plugin);
+                    }
+                    else if (plugin.ReferencePath.AbsolutePath.StartsWith(currentDirectory))
                     {
                         toReturn.AddDependency(plugin);
                     }
